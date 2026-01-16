@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinot GUI Login</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Pinot GUI Login</h1>
+        <p class="subtitle">Login to VM → Find ws-tsdb → Deploy TCP Proxy</p>
+
+        <div class="info-box">
+            <h3>📋 Deployment Flow:</h3>
+            <ol style="text-align: left; padding-left: 20px;">
+                <li>Connect to initial VM and run <code>ws.sh -showInfo</code></li>
+                <li>Search for <strong>ws-tsdb</strong> component and extract VM IP</li>
+                <li>Connect to ws-tsdb VM using same credentials</li>
+                <li>Download and deploy TCP Proxy Docker container</li>
+            </ol>
+        </div>
+
+        <form id="deployForm">
+            <div class="form-group">
+                <label for="vmIP">VM IP Address:</label>
+                <input type="text" id="vmIP" name="vmIP" required placeholder="10.0.0.1">
+            </div>
+
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required placeholder="root">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required placeholder="password">
+            </div>
+
+            <div class="form-group">
+                <label for="port">SSH Port:</label>
+                <input type="number" id="port" name="port" value="22" required placeholder="22">
+            </div>
+
+            <button type="submit" class="btn-submit">🚀 Deploy TCP Proxy</button>
+        </form>
+
+        <div id="results" style="display: none;">
+            <h2>Deployment Progress</h2>
+            <div id="stepsContainer"></div>
+            <div id="finalResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('deployForm');
+        const results = document.getElementById('results');
+        const stepsContainer = document.getElementById('stepsContainer');
+        const finalResult = document.getElementById('finalResult');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                vmIP: document.getElementById('vmIP').value,
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value,
+                port: document.getElementById('port').value
+            };
+
+            results.style.display = 'block';
+            stepsContainer.innerHTML = '<p>⏳ Starting deployment...</p>';
+            finalResult.innerHTML = '';
+
+            try {
+                const response = await fetch('/deploy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                
+                // Display steps
+                let stepsHTML = '<div class="steps-list">';
+                
+                if (data.steps && data.steps.length > 0) {
+                    data.steps.forEach(step => {
+                        const statusIcon = step.status === 'completed' ? '✅' : 
+                                         step.status === 'failed' ? '❌' : 
+                                         '⏳';
+                        
+                        stepsHTML += `
+                            <div class="step-item ${step.status}">
+                                <h4>${statusIcon} Step ${step.step}: ${step.action}</h4>
+                                ${step.result ? `<p><strong>Result:</strong> ${step.result}</p>` : ''}
+                                ${step.output ? `<pre class="output">${step.output}</pre>` : ''}
+                                ${step.error ? `<p class="error"><strong>Error:</strong> ${step.error}</p>` : ''}
+                            </div>
+                        `;
+                    });
+                }
+                
+                stepsHTML += '</div>';
+                stepsContainer.innerHTML = stepsHTML;
+
+                // Display final result
+                if (data.success) {
+                    const pinotURL = data.wstsdbIP ? `https://${data.wstsdbIP}:9444` : '';
+                    finalResult.innerHTML = `
+                        <div class="success-message">
+                            <h3>✅ Deployment Successful!</h3>
+                            <p>${data.message}</p>
+                            ${data.wstsdbIP ? `<p><strong>ws-tsdb VM IP:</strong> ${data.wstsdbIP}</p>` : ''}
+                            ${pinotURL ? `
+                                <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 5px;">
+                                    <h4 style="margin-top: 0;">🎯 Launch Pinot GUI</h4>
+                                    <a href="${pinotURL}" target="_blank" class="pinot-link">${pinotURL}</a>
+                                    <p style="font-size: 12px; color: #666; margin-bottom: 0;">Click the link above to open Pinot GUI in a new tab</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                } else {
+                    finalResult.innerHTML = `
+                        <div class="error-message">
+                            <h3>❌ Deployment Failed</h3>
+                            <p>${data.error || 'Unknown error occurred'}</p>
+                            ${data.fullOutput ? `<pre class="output">${data.fullOutput}</pre>` : ''}
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                stepsContainer.innerHTML = '';
+                finalResult.innerHTML = `
+                    <div class="error-message">
+                        <h3>❌ Request Failed</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        });
+    </script>
+
+    <style>
+        .steps-list {
+            margin: 20px 0;
+        }
+
+        .step-item {
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .step-item.completed {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+
+        .step-item.failed {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .step-item h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+
+        .output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .error {
+            color: #dc3545;
+            margin: 10px 0;
+        }
+
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .success-message h3,
+        .error-message h3 {
+            margin-top: 0;
+        }
+
+        .pinot-link {
+            display: inline-block;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .pinot-link:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</body>
+</html>
